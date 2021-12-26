@@ -2,8 +2,7 @@
 # Compile a faust file as a SuperCollider help file
 import os
 import sys
-import os.path
-from os import path
+from pathlib import Path
 import json
 from collections import ChainMap
 import subprocess
@@ -16,10 +15,10 @@ import shutil
 
 # TODO Is this cross platform? Does it work on Windows?
 def convert_files(dsp_file, out_dir, arch):
-    cpp_file = path.splitext(path.basename(dsp_file))[0] + ".cpp"
+    cpp_file = str(Path(dsp_file).stem + ".cpp")
     arch_file = arch or "supercollider.cpp"
 
-    cmd = "faust -i -a %s -json %s -o %s" % (arch_file, dsp_file, cpp_file)
+    cmd = f"faust -i -a {arch_file} -json {dsp_file} -o {cpp_file}"
 
     result = {
         "arch_file": arch_file,
@@ -29,11 +28,17 @@ def convert_files(dsp_file, out_dir, arch):
         "json_file": dsp_file + ".json"
     }
 
-    print("Converting faust file to .json and .cpp.\nCommand:\n%s.\nc++ file:%s\njson file:%s" % (cmd, cpp_file, result["json_file"]))
+    print(
+        "converting faust file to .json and .cpp\n"
+        f"command: {cmd}\n"
+        f"c++ file: {cpp_file}\n"
+        f"json file: {result['json_file']}"
+    )
+
     try:
-        subprocess.run(cmd.split(), check = True, capture_output=False)
-        # shutil.move(result["cpp_file"], path.join(out_dir, result["cpp_file"]))
-        # shutil.move(result["json_file"], path.join(out_dir, result["json_file"]))
+        subprocess.run(cmd.split(), check=True, capture_output=False)
+        # shutil.move(result["cpp_file"], Path(out_dir) / result["cpp_file"])
+        # shutil.move(result["json_file"], Path(out_dir) / result["json_file"])
     except subprocess.CalledProcessError:
         # print(cmd)
         sys.exit('faust failed to compile json file')
@@ -41,13 +46,14 @@ def convert_files(dsp_file, out_dir, arch):
     return result
 
 def read_json(json_file):
-    if path.exists(json_file):
+    json_file = Path(json_file)
+    if json_file.exists():
         f = open(json_file)
         data = json.load(f)
         f.close()
         return data
     else:
-        sys.exit("Could not find json file %s" % json_file)
+        sys.exit(f"could not find json file {json_file}")
 
 # Some parts of the generated json file are parsed as lists of dicts -
 # This flattens one of those into one dictionary
@@ -58,10 +64,6 @@ def write_file(file, contents):
     f = open(file, "w")
     f.write(contents)
     f.close()
-
-def make_dir(dir_path):
-    if not path.exists(dir_path):
-        os.mkdir(dir_path)
 
 ###########################################
 # Compilation
@@ -122,41 +124,49 @@ def faustoptflags():
 
     return envDict
 
-# Check if header path contains the right folders
-def check_header_path(headerpath):
-    headerpath = path.join(headerpath, "include")
-    plugin_interface = path.join(headerpath, "plugin_interface")
-    server = path.join(headerpath, "server")
-    common = path.join(headerpath, "common")
+def get_header_paths(header_path):
+    '''Return existing SuperCollider header paths or None.'''
+    include_folder = Path(header_path) / "include"
+    paths = [
+        include_folder / "plugin_interface",
+        include_folder / "server",
+        include_folder / "common"
+    ]
+    if all(p.exists() for p in paths):
+        print(f"found SuperCollider headers: {header_path}")
+        return tuple(str(p) for p in paths)
 
-    if path.exists(headerpath) and path.exists(plugin_interface) and path.exists(server) and path.exists(common):
-        return True
-    else:
-        return False
+def find_headers(header_path):
+    '''Try and find SuperCollider headers on system.'''
 
-# Try and find SuperCollider headers on system
-def find_headers():
+    ret = get_header_paths(header_path)
+    if ret:
+        return ret
+
     # Possible locations of SuperCollider headers
-    header_directories = [
+    folders = [
         "/usr/local/include/SuperCollider/include",
         "/usr/local/include/supercollider",
         "/usr/include/SuperCollider",
         "/usr/include/supercollider",
         "/usr/local/include/SuperCollider/",
         "/usr/share/supercollider-headers",
-        path.join(os.getcwd(), "supercollider")
-        ]
+        str(Path(".").resolve() / "supercollider")
+    ]
 
-    if os.environ['HOME']:
-        header_directories.append(path.join(os.environ['HOME'], "supercollider"))
+    home =  os.environ.get("HOME", "")
+    if home: folders.append(str(Path(home) / "supercollider"))
 
-    for headerpath in header_directories:
-        if check_header_path(headerpath):
-            print("Found SuperCollider headers: %s" % headerpath)
-            return headerpath
+    for folder in folders:
+        ret = get_header_paths(folder)
+        if ret:
+            return ret
 
-# Generate string of include flags for the compiler command
-def includeflags(header_path):
+    sys.exit("could not find SuperCollider headers")
+
+def include_flags(header_path):
+    '''Generate a string of include flags for the compiler command.'''
+
     # dspresult = subprocess.run(["faust", "-dspdir"], stdout=subprocess.PIPE)
     # dspdir = dspresult.stdout.decode('utf-8')
 
@@ -165,37 +175,11 @@ def includeflags(header_path):
 
     incresult = subprocess.run(["faust", "-includedir"], stdout=subprocess.PIPE)
     includedir = incresult.stdout.decode('utf-8')
-
-    if header_path:
-        sc = header_path
-    else:
-        possible_header_path = find_headers()
-        if possible_header_path:
-            if check_header_path(possible_header_path):
-                sc = possible_header_path
-            else:
-                sys.exit("Could not find SuperCollider headers")
-        else:
-            sys.exit("Could not find SuperCollider headers")
-
-    sc = path.join(sc, "include")
-
-    plugin_interface = path.join(sc, "plugin_interface")
-    if not path.exists(plugin_interface):
-        sys.exit("Could not find supercollider headers")
-
-    server = path.join(sc, "server")
-    if not path.exists(server):
-        sys.exit("Could not find supercollider headers")
-
-    common = path.join(sc, "common")
-    if not path.exists(common):
-        sys.exit("Could not find supercollider headers")
-
-    return "-I%s -I%s -I%s -I%s -I%s" % (plugin_interface, common, server, includedir, os.getcwd())
+    plugin, common, server = find_headers(header_path)
+    return f"-I{plugin} -I{common} -I{server} -I{includedir} -I{Path('.').resolve()}"
 
 # Generate a string of build flags for the compiler command. This includes the include flags.
-def buildflags(headerpath, macos_arch):
+def build_flags(header_path, macos_arch):
 
     mac_arch=""
     if macos_arch == "x86_64":
@@ -204,31 +188,30 @@ def buildflags(headerpath, macos_arch):
         mac_arch = "-arch arm64"
 
     env = faustoptflags()
-    return "-O3 %s %s %s %s" % (env["SCFLAGS"], includeflags(headerpath), env["MYGCCFLAGS"], mac_arch)
+    return "-O3 %s %s %s %s" % (env["SCFLAGS"], include_flags(header_path), env["MYGCCFLAGS"], mac_arch)
 
 # Compile a .cpp file generated using faust to SuperCollider plugins.
 # TODO: Allow additional CXX flags
-def compile(out_dir, cpp_file, class_name, compile_supernova, headerpath, macos_arch):
-    print("Compiling %s" % class_name)
-    flags = buildflags(headerpath, macos_arch)
-    env = faustoptflags()
+def compile(out_dir, cpp_file, class_name, compile_supernova, header_path, macos_arch):
+    print(f"Compiling {class_name}")
+    flags = build_flags(header_path, macos_arch)
 
-    if path.exists(cpp_file):
-        scsynth_obj = path.join(out_dir, class_name + "." + env["EXT"])
-        scsynth_compile_command = "%s %s -Dmydsp=\"%s\" -o %s %s" % (os.environ["CXX"], flags, class_name, scsynth_obj, cpp_file)
+    if Path(cpp_file).exists():
+        ext = faustoptflags()["EXT"]
+        cxx = os.environ["CXX"]
 
-        # Compile scsynth
-        print("Compiling scsynth object using command:\n%s" % scsynth_compile_command)
-        os.system(scsynth_compile_command.replace("\n", ""))
+        scsynth_obj = str(Path(out_dir) / (class_name + "." + ext))
+        synth_cmd = f'{cxx} {flags} -Dmydsp="{class_name}" -o {scsynth_obj} {cpp_file}'
+        print(f"compiling scsynth object using command: {synth_cmd}")
+        os.system(synth_cmd.replace("\n", ""))
 
         if compile_supernova:
-            supernova_obj = path.join(out_dir, class_name + "_supernova." + env["EXT"])
-            supernova_compile_command = "%s %s -Dmydsp=\"%s\" -o %s %s" % (os.environ["CXX"], flags, class_name, supernova_obj, cpp_file)
-
-            print("Compiling supernova object using command:\n%s" % supernova_compile_command)
-            os.system(supernova_compile_command.replace("\n", ""))
+            supernova_obj = str(Path(out_dir) / (class_name + "_supernova." + ext))
+            nova_cmd = f'{cxx} {flags} -Dmydsp="{class_name}" -o {supernova_obj} {cpp_file}'
+            print(f"compiling supernova object using command: {nova_cmd}")
+            os.system(nova_cmd.replace("\n", ""))
     else:
-        sys.exit("Could not find cpp_file")
+        sys.exit(f"could not find cpp file: {cpp_file}")
 
 ###########################################
 # Help file
@@ -322,16 +305,15 @@ KEYWORD::faust,plugin""" % (
 
 # Create a help file in target_dir
 def make_help_file(target_dir, json_data, noprefix):
-
     # Create directory if necessary
-    out_dir = path.join(target_dir, "HelpSource")
-    make_dir(out_dir)
-    out_dir = path.join(out_dir, "Classes")
-    make_dir(out_dir)
+    out_dir = Path(target_dir) / "HelpSource"
+    out_dir.mkdir(exist_ok=True)
+    out_dir = out_dir / "Classes"
+    out_dir.mkdir(exist_ok=True)
 
     # help file
     file_name = get_class_name(json_data, noprefix) + ".schelp"
-    file_name = path.join(out_dir, file_name)
+    file_name = out_dir / file_name
     write_file(file_name, class_help(json_data, noprefix))
 
 ###########################################
@@ -510,14 +492,13 @@ checkInputs {
 
 # Make Supercollider class file
 def make_class_file(target_dir, json_data, noprefix):
-
     # Create directory if necessary
-    out_dir = path.join(target_dir, "Classes")
-    make_dir(out_dir)
+    out_dir = Path(target_dir) / "Classes"
+    out_dir.mkdir(exist_ok=True)
 
     # help file
     file_name = get_class_name(json_data, noprefix) + ".sc"
-    file_name = path.join(out_dir, file_name)
+    file_name = out_dir / file_name
     write_file(file_name, get_sc_class(json_data, noprefix))
 
 ###########################################
@@ -573,19 +554,20 @@ if __name__ == "__main__":
     compile(tmp_folder.name, scresult["cpp_file"], scresult["class"], compile_supernova, header_path, macosarch)
 
     # Move files to target
-    env = faustoptflags()
-    target = args.targetfolder or os.getcwd()
+    ext = faustoptflags()["EXT"]
+    tmp_path = Path(tmp_folder.name)
+    trg_path = Path(args.targetfolder or os.getcwd())
 
     # Move SuperCollider files
-    shutil.copytree(path.join(tmp_folder.name, "Classes"), path.join(target, "Classes"), dirs_exist_ok=True)
-    shutil.copytree(path.join(tmp_folder.name, "HelpSource"), path.join(target, "HelpSource"), dirs_exist_ok=True)
+    shutil.copytree(tmp_path / "Classes", trg_path / "Classes", dirs_exist_ok=True)
+    shutil.copytree(tmp_path / "HelpSource", trg_path / "HelpSource", dirs_exist_ok=True)
 
     # Move object files
-    for objfile in os.listdir(tmp_folder.name):
-        if objfile.endswith(env["EXT"]):
-            shutil.move(path.join(tmp_folder.name, objfile), path.join(target, objfile))
+    for objfile in tmp_path.iterdir():
+        if objfile.suffix == ext:
+            shutil.move(tmp_path / objfile, trg_path / objfile)
 
     # Move cpp file
     copy_cpp = args.cpp or False
     if copy_cpp:
-        shutil.move(scresult["cpp_file"], path.join(target, scresult["cpp_file"]))
+        shutil.move(scresult["cpp_file"], trg_path / scresult["cpp_file"])
