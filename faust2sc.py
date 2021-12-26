@@ -126,7 +126,7 @@ def faustoptflags():
 
 def get_header_paths(header_path):
     '''Return existing SuperCollider header paths or None.'''
-    include_folder = Path(header_path) / "include"
+    include_folder = Path(header_path)
     paths = [
         include_folder / "plugin_interface",
         include_folder / "server",
@@ -145,7 +145,7 @@ def find_headers(header_path):
 
     # Possible locations of SuperCollider headers
     folders = [
-        "/usr/local/include/SuperCollider/include",
+        "/usr/local/include/SuperCollider",
         "/usr/local/include/supercollider",
         "/usr/include/SuperCollider",
         "/usr/include/supercollider",
@@ -536,7 +536,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--noprefix", help="1 == Do not prefix the SuperCollider class and object with Faust. 0 == prefix. It is 1 by default, ie not using the Faust prefix.", type=int, choices=[0,1])
     parser.add_argument("-s", "--supernova", help="Compile with supernova plugin", action="store_true")
     parser.add_argument("-c", "--cpp", help="Copy cpp file to target directory after compilation.", action="store_true")
-    parser.add_argument("-p", "--headerpath", help="Path to SuperCollider headers. If no header path is supplied, the script will try to find the headers in common locations.")
+    parser.add_argument("-p", "--headerpath", default="./include", help="Path to SuperCollider headers. If no header path is supplied, the script will try to find the headers in common locations.")
     args = parser.parse_args()
 
     # Temporary folder for intermediary files
