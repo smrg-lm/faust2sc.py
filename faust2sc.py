@@ -13,7 +13,6 @@ import shutil
 # Utils
 ###########################################
 
-# TODO Is this cross platform? Does it work on Windows?
 def convert_files(dsp_file, out_dir, arch):
     cpp_file = str(Path(dsp_file).stem + ".cpp")
     arch_file = arch or "supercollider.cpp"
@@ -564,8 +563,8 @@ if __name__ == "__main__":
 
     # Move object files
     for objfile in tmp_path.iterdir():
-        if objfile.suffix == ext:
-            shutil.move(tmp_path / objfile, trg_path / objfile)
+        if objfile.suffix[1:] == ext:
+            shutil.move(objfile, trg_path / objfile.name)
 
     # Move cpp file
     copy_cpp = args.cpp or False
