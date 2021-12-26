@@ -9,6 +9,14 @@ import subprocess
 import platform
 import shutil
 
+# IT WILL NOT WORK ANYWAY with llvm installed in Windows without gnu utils.
+# - faust -json doesn't scape the paths.
+# - paths need to be quoted in case of spaces in the names.
+# - clang++: error: unsupported option '-fPIC' for target 'x86_64-pc-windows-msvc'
+# - clang++: warning: unable to find a Visual Studio installation; try running Clang from a developer command prompt [-Wmsvc-not-found]
+# - osci.cpp:53:10: fatal error: 'map' file not found
+#   include <map>
+
 ###########################################
 # Utils
 ###########################################
@@ -45,7 +53,7 @@ def convert_files(dsp_file, out_dir, arch):
     return result
 
 def read_json(json_file):
-    json_file = Path(json_file)
+    json_file = Path("osci.dsp_test.json")  # Path(json_file)
     if json_file.exists():
         f = open(json_file)
         data = json.load(f)
@@ -107,17 +115,17 @@ def faustoptflags():
     if systemType != 'Darwin':
         envDict["EXT"]="so"
         # TODO DNDEBUG
-        envDict["SCFLAGS"]="-DNO_LIBSNDFILE -DSC_LINUX -shared -fPIC"
+        envDict["SCFLAGS"]="-DNO_LIBSNDFILE -DSC_LINUX -shared"  # -fPIC"
 
     if 'CXXFLAGS' in os.environ:
         envDict["MYGCCFLAGS"] = envDict["MYGCCFLAGS"] + " " + os.environ["CXXFLAGS"]
 
     # Set default values for CXX and CC
     if 'CXX' not in os.environ:
-        os.environ['CXX'] = "c++"
+        os.environ['CXX'] = "clang++"  # "c++"
 
     if 'CC' not in os.environ:
-        os.environ['CC'] = "cc"
+        os.environ['CC'] = "clang"  # "cc"
 
     os.environ['LIPO'] = "lipo"
 
@@ -175,7 +183,8 @@ def include_flags(header_path):
     incresult = subprocess.run(["faust", "-includedir"], stdout=subprocess.PIPE)
     includedir = incresult.stdout.decode('utf-8')
     plugin, common, server = find_headers(header_path)
-    return f"-I{plugin} -I{common} -I{server} -I{includedir} -I{Path('.').resolve()}"
+    pwd = Path('.').resolve()  # *** La alternancia de comillas no es recursiva.
+    return f'-I"{plugin}" -I"{common}" -I"{server}" -I"{includedir}" -I"{pwd}"'
 
 # Generate a string of build flags for the compiler command. This includes the include flags.
 def build_flags(header_path, macos_arch):
